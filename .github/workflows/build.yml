@@ -1,0 +1,67 @@
+# @formatter:off
+name: Publishing process
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build_and_publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: https://npm.pkg.github.com/
+          scope: '@mickedplay'
+
+      - name: npm install
+        run: npm install
+
+      # Bumping version
+      - name: bumping version
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+
+          jsonFile="package.json"
+
+          if [ ! -f "$jsonFile" ]; then
+            echo "Error: The json file '$jsonFile' does not exist."
+            exit 1
+          fi
+
+          currentVersion=$(jq -r '.version' "$jsonFile")
+
+          incrementVersion() {
+            major=$(echo "$1" | cut -d. -f1)
+            minor=$(echo "$1" | cut -d. -f2)
+            patch=$(echo "$1" | cut -d. -f3)
+            ((patch++))
+            newVersion="$major.$minor.$patch"
+            echo "$newVersion"
+          }
+
+          newVersion=$(incrementVersion "$currentVersion")
+
+          jq --arg newVersion "$newVersion" '.version = $newVersion' "$jsonFile" >temp.json
+          mv temp.json "$jsonFile"
+
+          git add "$jsonFile"
+
+          git commit -m "Bumped version to $newVersion"
+          git push
+
+      - name: npm run build
+        run: npm run build
+
+      - name: npm publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
